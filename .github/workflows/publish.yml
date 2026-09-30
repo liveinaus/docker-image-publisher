@@ -1,8 +1,8 @@
 name: Publish Docker image
 
-# Builds a Docker image from one of the owner's private repositories and pushes it to Docker Hub
-# and GHCR. This repository is public so its runners are free; the source repositories keep
-# Actions switched off and are only ever checked out from here.
+# Builds a Docker image from one of the owner's private repositories and pushes it to Docker Hub.
+# This repository is public so its runners are free; the source repositories keep Actions
+# switched off and are only ever checked out from here.
 #
 # Everything a public repository's run produces is readable by anyone: logs, run names, caches
 # and artifacts. So this workflow prints as little as it can about the source (quiet builds by
@@ -21,7 +21,7 @@ on:
         required: true
         type: string
       image:
-        description: "Image name on Docker Hub and GHCR, lowercase (e.g. msoauth2api)"
+        description: "Image name on Docker Hub, lowercase (e.g. msoauth2api)"
         required: true
         type: string
       tag:
@@ -70,7 +70,6 @@ jobs:
       repository: ${{ steps.resolve.outputs.repository }}
       semver: ${{ steps.resolve.outputs.semver }}
       channel: ${{ steps.resolve.outputs.channel }}
-      ghcr_image: ${{ steps.resolve.outputs.ghcr_image }}
     steps:
       - name: Validate inputs and resolve tag
         id: resolve
@@ -113,17 +112,12 @@ jobs:
             printf 'repository=%s/%s\n' "${GITHUB_REPOSITORY_OWNER}" "${REPO}"
             printf 'semver=%s\n' "${SEMVER}"
             printf 'channel=%s\n' "${CHANNEL}"
-            # GHCR requires a lowercase owner
-            printf 'ghcr_image=ghcr.io/%s/%s\n' "${GITHUB_REPOSITORY_OWNER,,}" "${IMAGE}"
           } >> "$GITHUB_OUTPUT"
 
   # Build each platform natively -- no QEMU, which is painfully slow for native addons.
   # The arm64 runner is free for public repositories, which is half the point of this one.
   build:
     needs: meta
-    permissions:
-      contents: read
-      packages: write # push to GHCR with the built-in GITHUB_TOKEN
     strategy:
       fail-fast: false
       matrix:
@@ -155,13 +149,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       # Plain `docker buildx build` rather than docker/build-push-action, for control over the
       # output: --progress=quiet keeps the source's build steps out of the public log.
       # --provenance=false because the attestation would record the private repository's
@@ -169,7 +156,6 @@ jobs:
       - name: Build and push platform image
         env:
           DH_IMG: ${{ secrets.DOCKERHUB_USERNAME }}/${{ inputs.image }}
-          GHCR_IMG: ${{ needs.meta.outputs.ghcr_image }}
           VER: ${{ needs.meta.outputs.semver }}
           PLATFORM: ${{ matrix.platform }}
           SUFFIX: ${{ matrix.suffix }}
@@ -186,7 +172,6 @@ jobs:
             --provenance false \
             --push \
             --tag "${DH_IMG}:${VER}-${SUFFIX}" \
-            --tag "${GHCR_IMG}:${VER}-${SUFFIX}" \
             --label "org.opencontainers.image.version=${VER}" \
             --label "org.opencontainers.image.revision=${REVISION}" \
             "src/${CONTEXT}" > /dev/null
@@ -196,9 +181,6 @@ jobs:
   merge:
     needs: [meta, build]
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     steps:
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -206,31 +188,21 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Always push the versioned tag and the channel alias (latest / beta / dev) to both
-      # registries. Per-platform tags were pushed to both in the build job.
+      # Always push the versioned tag and the channel alias (latest / beta / dev). The
+      # per-platform tags were pushed in the build job.
       - name: Create and push multi-platform manifests
         env:
           DH_IMG: ${{ secrets.DOCKERHUB_USERNAME }}/${{ inputs.image }}
-          GHCR_IMG: ${{ needs.meta.outputs.ghcr_image }}
           VER: ${{ needs.meta.outputs.semver }}
           CHANNEL: ${{ needs.meta.outputs.channel }}
         run: |
           set -euo pipefail
-          for IMG in "${DH_IMG}" "${GHCR_IMG}"; do
-            docker buildx imagetools create \
-              -t "${IMG}:${VER}" \
-              -t "${IMG}:${CHANNEL}" \
-              "${IMG}:${VER}-amd64" \
-              "${IMG}:${VER}-arm64"
-          done
+          docker buildx imagetools create \
+            -t "${DH_IMG}:${VER}" \
+            -t "${DH_IMG}:${CHANNEL}" \
+            "${DH_IMG}:${VER}-amd64" \
+            "${DH_IMG}:${VER}-arm64"
           echo "Published ${VER} (${CHANNEL})" >> "$GITHUB_STEP_SUMMARY"

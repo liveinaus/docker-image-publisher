@@ -1,6 +1,6 @@
 # docker-image-publisher
 
-Builds Docker images from private repositories and publishes them to Docker Hub and GHCR.
+Builds Docker images from private repositories and publishes them to Docker Hub.
 It is public only so that GitHub Actions runners (including native arm64) are free. The source
 repositories keep Actions switched off.
 
@@ -20,7 +20,7 @@ gh workflow run publish.yml -R liveinaus/docker-image-publisher \
 | ------------ | -------- | ----------------------------------------------------------------- |
 | `repo`       | yes      | Source repository name under `liveinaus`                          |
 | `ref`        | yes      | Branch, tag or SHA to build                                       |
-| `image`      | yes      | Image name, lowercase                                             |
+| `image`      | yes      | Docker Hub image name, lowercase                                  |
 | `tag`        | no       | Image tag; defaults to `ref`. Must be `vX.Y.Z`, `vX.Y.Z-pre` or `dev-*` |
 | `context`    | no       | Build context (default `.`)                                       |
 | `dockerfile` | no       | Dockerfile path (default `Dockerfile`)                            |
@@ -36,10 +36,6 @@ Tags: `vX.Y.Z` pushes `X.Y.Z` and `latest`; any prerelease pushes `X.Y.Z-pre` an
 | `SOURCE_REPO_TOKEN`  | Fine-grained PAT, **read-only Contents** on the source repositories    |
 | `DOCKERHUB_USERNAME` | Docker Hub user                                                        |
 | `DOCKERHUB_TOKEN`    | Docker Hub access token with read/write                                |
-
-GHCR uses the built-in `GITHUB_TOKEN`. For a GHCR package that already exists (created by
-another repository), grant this repository **Write** under the package's
-*Settings → Manage Actions access*.
 
 ## Adding a repository
 
